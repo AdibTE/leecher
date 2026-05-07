@@ -17,11 +17,12 @@ on:
         default: false
         type: boolean
 
+permissions:
+  contents: write
+
 jobs:
   download-and-commit:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout repository
@@ -32,25 +33,25 @@ jobs:
         run: |
           if [ -d "downloads" ]; then
             rm -rf downloads
+            git rm -r --cached downloads/ 2>/dev/null || true
             echo "پوشه downloads پاک شد."
           fi
 
-      - name: Create downloads folder
+      - name: Create downloads folder and download file
         run: |
           FOLDER="downloads/$(date +'%Y-%m-%d_%H-%M-%S')"
           mkdir -p "$FOLDER"
           echo "FOLDER=$FOLDER" >> $GITHUB_ENV
 
-      - name: Download file
-        run: |
           OUTPUT_PATH="$FOLDER/${{ inputs.file_name }}"
+
           curl -L \
             --retry 5 \
             --retry-delay 10 \
             --connect-timeout 30 \
             -o "$OUTPUT_PATH" \
             "${{ inputs.file_url }}"
-          
+
           FILE_SIZE=$(du -sh "$OUTPUT_PATH" | cut -f1)
           echo "FILE_SIZE=$FILE_SIZE" >> $GITHUB_ENV
           echo "OUTPUT_PATH=$OUTPUT_PATH" >> $GITHUB_ENV
@@ -61,7 +62,13 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add downloads/
           git commit -m "📥 Add: ${{ inputs.file_name }} (${{ env.FILE_SIZE }})"
-          git push
+
+          for attempt in $(seq 1 5); do
+            git pull --rebase origin main 2>/dev/null || true
+            git push origin main && break
+            echo "Retry $attempt..."
+            sleep 10
+          done
 
       - name: Summary
         run: |
